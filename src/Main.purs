@@ -1,10 +1,10 @@
 module Main where
 
-import Data.Maybe (Maybe(..))
 import Prelude
 
 import Control.Monad.Except (runExcept)
 import Data.Either (Either(..))
+import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Dotenv as Dotenv
 import Effect (Effect)
@@ -25,16 +25,25 @@ main = do
     Left error -> log $ show error
     Right _ -> do
       envs <- loadEnvs
-      logShow envs
+      case envs of
+        Tuple (Just playerToken) (Just levelID) -> do
+          runStuff playerToken levelID
+        _ -> logShow "error getting envs"
   ) do
     Dotenv.loadFile
+
+runStuff :: String -> String -> Effect Unit
+runStuff playerToken levelID = do
+  log "running stuff"
+  log playerToken
+  log levelID
 
   connection <- WS.create "ws://echo.websocket.events/.ws" []
   logShow =<< WS.readyState connection
 
   let socket = WS.toEventTarget connection
 
-  openListener <- eventListener(\event -> logShow "Connection opened")
+  openListener <- eventListener(\event -> log "Connection opened")
   messageListener <- eventListener(messageReceiver)
 
   addEventListener onOpen openListener true socket
@@ -42,12 +51,12 @@ main = do
 
 messageReceiver :: Event -> Effect Unit
 messageReceiver event = do
-  logShow "got a message"
+  log "got a message"
   let message = fromEvent event
   case message of
     Just msg -> do
       logShow $ runExcept $ readString $ data_ msg
-    Nothing -> logShow "no message"
+    Nothing -> log "no message"
 
 loadEnvs :: Effect (Tuple (Maybe String) (Maybe String))
 loadEnvs = do
