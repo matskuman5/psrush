@@ -16,11 +16,13 @@ to generate this file without the comments in this block.
   , "console"
   , "dotenv"
   , "effect"
+  , "either"
   , "foreign"
   , "maybe"
   , "node-process"
   , "prelude"
   , "transformers"
+  , "tuples"
   , "web-events"
   , "web-socket"
   ]
