@@ -8,15 +8,30 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Dotenv as Dotenv
 import Effect (Effect)
-import Effect.Aff (runAff_)
-import Effect.Console (log, logShow)
-import Foreign (readString)
+import Effect.Aff (Aff, Error, attempt, launchAff_, runAff_)
+import Effect.Class (liftEffect)
+import Effect.Console (errorShow, log, logShow)
+import Foreign (fail, readString)
 import Node.Process (lookupEnv)
+import Simple.JSON as JSON
 import Web.Event.Event (Event)
 import Web.Event.EventTarget (addEventListener, eventListener)
 import Web.Socket.Event.EventTypes (onMessage, onOpen)
 import Web.Socket.Event.MessageEvent (fromEvent, data_)
 import Web.Socket.WebSocket as WS
+import Fetch
+
+data GameInstance = GameInstance {
+  gameState :: String,
+  owner :: String,
+  status :: String,
+  createdAt :: String,
+  gameType :: String,
+  entityId :: String
+}
+
+instance showGameInstance :: Show GameInstance where
+  show (GameInstance { gameState, owner, status, createdAt, gameType, entityId }) = "GameInstance { gameState: " <> gameState <> ", owner: " <> owner <> ", status: " <> status <> ", createdAt: " <> createdAt <> ", gameType: " <> gameType <> ", entityId: " <> entityId <> " }"
 
 main :: Effect Unit
 main = do
@@ -38,16 +53,40 @@ runStuff playerToken levelID = do
   log playerToken
   log levelID
 
-  connection <- WS.create "ws://echo.websocket.events/.ws" []
+  runAff_ (\either -> case either of
+    Left error -> log $ show error
+    Right game -> logShow game
+  ) do
+    createGame playerToken levelID
+
+  connection <- WS.create ("wss://goldrush.monad.fi/backend/" <> playerToken <>  "/") []
   logShow =<< WS.readyState connection
 
   let socket = WS.toEventTarget connection
 
-  openListener <- eventListener(\event -> log "Connection opened")
+  openListener <- eventListener(\event -> do
+    log "Connection opened"
+    WS.sendString connection ("[\"sub-game\",{\"id\":}]"))
   messageListener <- eventListener(messageReceiver)
 
   addEventListener onOpen openListener true socket
   addEventListener onMessage messageListener true socket
+
+createGame ∷ String → String → Aff (Either Error GameInstance)
+createGame playerToken levelID = do
+  _response <- attempt $ fetch ("https://goldrush.monad.fi/backend/api/levels/" <> levelID) { headers: { "Authorization": playerToken }}
+  case _response of
+    Left e -> do
+      pure (Left e)
+    Right response -> do
+      pure (Right (GameInstance {
+        gameState: "waiting",
+        owner: "test",
+        status: "waiting",
+        createdAt: "2021-03-21T12:00:00.000Z",
+        gameType: "goldrush",
+        entityId: "test"
+      }))
 
 messageReceiver :: Event -> Effect Unit
 messageReceiver event = do
