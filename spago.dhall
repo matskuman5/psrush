@@ -18,6 +18,7 @@ to generate this file without the comments in this block.
   , "effect"
   , "node-process"
   , "prelude"
+  , "web-events"
   , "web-socket"
   ]
 , packages = ./packages.dhall
