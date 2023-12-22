@@ -13,12 +13,19 @@ to generate this file without the comments in this block.
 { name = "my-project"
 , dependencies =
   [ "aff"
+  , "affjax"
+  , "affjax-node"
+  , "affjax-web"
+  , "argonaut"
+  , "argonaut-core"
   , "console"
   , "dotenv"
   , "effect"
   , "either"
   , "fetch"
+  , "fetch-yoga-json"
   , "foreign"
+  , "http-methods"
   , "maybe"
   , "node-process"
   , "prelude"
@@ -27,6 +34,8 @@ to generate this file without the comments in this block.
   , "tuples"
   , "web-events"
   , "web-socket"
+  , "web-xhr"
+  , "yoga-json"
   ]
 , packages = ./packages.dhall
 , sources = [ "src/**/*.purs", "test/**/*.purs" ]

@@ -2,24 +2,26 @@ module Main where
 
 import Prelude
 
+import Affjax.Node as AN
+import Affjax.RequestHeader (RequestHeader(..))
+import Affjax.ResponseFormat as RF
+import Affjax.Web (defaultRequest)
 import Control.Monad.Except (runExcept)
 import Data.Either (Either(..))
+import Data.HTTP.Method as Method
 import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Dotenv as Dotenv
 import Effect (Effect)
-import Effect.Aff (Aff, Error, attempt, launchAff_, runAff_)
-import Effect.Class (liftEffect)
-import Effect.Console (errorShow, log, logShow)
-import Foreign (fail, readString)
+import Effect.Aff (Aff, runAff_)
+import Effect.Console (log, logShow)
+import Foreign (readString)
 import Node.Process (lookupEnv)
-import Simple.JSON as JSON
 import Web.Event.Event (Event)
 import Web.Event.EventTarget (addEventListener, eventListener)
 import Web.Socket.Event.EventTypes (onMessage, onOpen)
 import Web.Socket.Event.MessageEvent (fromEvent, data_)
 import Web.Socket.WebSocket as WS
-import Fetch
 
 data GameInstance = GameInstance {
   gameState :: String,
@@ -66,27 +68,18 @@ runStuff playerToken levelID = do
 
   openListener <- eventListener(\event -> do
     log "Connection opened"
-    WS.sendString connection ("[\"sub-game\",{\"id\":}]"))
+    WS.sendString connection ("[\"sub-game\",{\"id\":" <> levelID <> "}]"))
   messageListener <- eventListener(messageReceiver)
 
   addEventListener onOpen openListener true socket
   addEventListener onMessage messageListener true socket
 
-createGame ∷ String → String → Aff (Either Error GameInstance)
+createGame ∷ String → String → Aff String
 createGame playerToken levelID = do
-  _response <- attempt $ fetch ("https://goldrush.monad.fi/backend/api/levels/" <> levelID) { headers: { "Authorization": playerToken }}
-  case _response of
-    Left e -> do
-      pure (Left e)
-    Right response -> do
-      pure (Right (GameInstance {
-        gameState: "waiting",
-        owner: "test",
-        status: "waiting",
-        createdAt: "2021-03-21T12:00:00.000Z",
-        gameType: "goldrush",
-        entityId: "test"
-      }))
+  result <- AN.request (defaultRequest { url = ("https://goldrush.monad.fi/backend/api/levels/" <> levelID), method = Left Method.POST, headers = [(RequestHeader "Authorization" playerToken)], responseFormat = RF.string })
+  case result of
+    Left err -> pure "GET /api response failed to decode"
+    Right response -> pure response.body
 
 messageReceiver :: Event -> Effect Unit
 messageReceiver event = do
