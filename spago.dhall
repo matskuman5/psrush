@@ -18,6 +18,7 @@ to generate this file without the comments in this block.
   , "affjax-web"
   , "argonaut"
   , "argonaut-core"
+  , "arrays"
   , "console"
   , "dotenv"
   , "effect"

@@ -8,7 +8,8 @@ import Affjax.RequestHeader (RequestHeader(..))
 import Affjax.ResponseFormat as RF
 import Affjax.Web (defaultRequest)
 import Control.Monad.Except (runExcept)
-import Data.Argonaut (Json, JsonDecodeError, decodeJson, jsonParser)
+import Data.Argonaut (Json, JsonDecodeError, decodeJson, jsonParser, toArray)
+import Data.Array (last, length, (!!))
 import Data.Either (Either(..))
 import Data.HTTP.Method as Method
 import Data.Maybe (Maybe(..))
@@ -34,6 +35,31 @@ type GameInstance = {
   gameType :: String,
   entityId :: String
 }
+
+-- TODO: make rotation its own type
+type GameState = {
+  player :: Player,
+  moves :: Int,
+  timer :: Int,
+  start :: Position,
+  startRotation :: Int,
+  target :: Position,
+  rows :: Int,
+  columns :: Int,
+  square :: Int
+}
+
+type Position = {
+  x :: Int,
+  y :: Int
+}
+
+type Player = {
+  position :: Position,
+  rotation :: Int
+}
+
+data Action = Move | Reset | Int
 
 main :: Effect Unit
 main = do
@@ -82,6 +108,9 @@ runStuff playerToken levelID = do
 gameInstanceFromJson :: Json -> Either JsonDecodeError GameInstance
 gameInstanceFromJson = decodeJson
 
+gameStateFromJson :: Json -> Either JsonDecodeError GameState
+gameStateFromJson = decodeJson
+
 createGame :: String -> String -> Aff (Either String GameInstance)
 createGame playerToken levelID = do
   result <- AN.request (defaultRequest { url = ("https://goldrush.monad.fi/backend/api/levels/" <> levelID), method = Left Method.POST, headers = [(RequestHeader "Authorization" playerToken)], responseFormat = RF.string })
@@ -100,8 +129,24 @@ messageReceiver event = do
   log "got a message"
   let message = fromEvent event
   case message of
-    Just msg -> do
-      logShow $ runExcept $ readString $ data_ msg
+    Just msg -> case runExcept $ readString $ data_ msg of
+      Left e -> logShow e
+      Right str -> do
+        case jsonParser str of
+          Left e -> logShow e
+          Right gameState -> case toArray gameState of
+            Nothing -> log "error decoding array"
+            Just arr -> do
+              case arr !! 1 of
+                Nothing -> log "error getting last element"
+                Just realGameState -> do
+                  case gameInstanceFromJson realGameState of
+                    Left e -> logShow e
+                    Right gameInstance -> case jsonParser gameInstance.gameState of
+                      Left e -> logShow e
+                      Right bullshit -> case gameStateFromJson bullshit of
+                        Left e -> logShow e
+                        Right crap -> logShow crap
     Nothing -> log "no message"
 
 loadEnvs :: Effect (Tuple (Maybe String) (Maybe String))
