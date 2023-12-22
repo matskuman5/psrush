@@ -2,6 +2,7 @@ module Main where
 
 import Prelude
 
+import Affjax (Error, Response)
 import Affjax.Node as AN
 import Affjax.RequestHeader (RequestHeader(..))
 import Affjax.ResponseFormat as RF
@@ -15,6 +16,7 @@ import Data.Tuple (Tuple(..))
 import Dotenv as Dotenv
 import Effect (Effect)
 import Effect.Aff (Aff, runAff_)
+import Effect.Class (liftEffect)
 import Effect.Console (log, logShow)
 import Foreign (readString)
 import Node.Process (lookupEnv)
@@ -26,7 +28,7 @@ import Web.Socket.WebSocket as WS
 
 type GameInstance = {
   gameState :: String,
-  owner :: String,
+  ownerId :: String,
   status :: String,
   createdAt :: String,
   gameType :: String,
@@ -54,21 +56,26 @@ runStuff playerToken levelID = do
   log levelID
 
   runAff_ (\either -> case either of
-    Left error -> log $ show error
+    Left str -> log $ show str
     Right game -> do
       log $ "game created"
-      connection <- WS.create ("wss://goldrush.monad.fi/backend/" <> playerToken <>  "/") []
-      logShow =<< WS.readyState connection
+      logShow game
+      case game of
+        Left str -> log "error"
+        Right realgame -> do
+          connection <- WS.create ("wss://goldrush.monad.fi/backend/" <> playerToken <>  "/") []
+          logShow =<< WS.readyState connection
 
-      let socket = WS.toEventTarget connection
+          let socket = WS.toEventTarget connection
 
-      openListener <- eventListener(\event -> do
-        log "Connection opened"
-        WS.sendString connection ("[\"sub-game\",{\"id\":" <> levelID <> "}]"))
-      messageListener <- eventListener(messageReceiver)
+          openListener <- eventListener(\event -> do
+            log "Connection opened"
+            WS.sendString connection ("[\"sub-game\",{\"id\":\""<> realgame.entityId <> "\"}]"))
+          messageListener <- eventListener(messageReceiver)
 
-      addEventListener onOpen openListener true socket
-      addEventListener onMessage messageListener true socket
+          addEventListener onOpen openListener true socket
+          addEventListener onMessage messageListener true socket
+      
   ) do
     createGame playerToken levelID
 
@@ -83,7 +90,9 @@ createGame playerToken levelID = do
     Right response -> case jsonParser response.body of
       Left err -> pure (Left "failed to parse json")
       Right game -> case gameInstanceFromJson game of
-        Left e -> pure (Left "failed to decode json")
+        Left e -> liftEffect do
+          logShow response.body
+          pure (Left (show e))
         Right gameInstance -> pure (Right gameInstance)
 
 messageReceiver :: Event -> Effect Unit
