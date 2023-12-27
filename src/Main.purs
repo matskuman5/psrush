@@ -59,7 +59,12 @@ type Player = {
   rotation :: Int
 }
 
-data Action = Move | Reset | Int
+data Action = Move | Reset | Rotation Int
+
+instance showAction :: Show Action where
+  show Move = "Move"
+  show Reset = "Reset"
+  show (Rotation n) = show n
 
 main :: Effect Unit
 main = do
@@ -97,7 +102,15 @@ runStuff playerToken levelID = do
           openListener <- eventListener(\event -> do
             log "Connection opened"
             WS.sendString connection ("[\"sub-game\",{\"id\":\""<> realgame.entityId <> "\"}]"))
-          messageListener <- eventListener(messageReceiver)
+          
+          messageListener <- eventListener(\event -> do
+            gameState <- messageToGameState event
+            case gameState of
+              Nothing -> log "failed to parse game state"
+              Just state -> do
+                WS.sendString connection (actionToJson (getNextAction state) realgame.entityId)
+                log $ "sent action " <> show (getNextAction state)
+            )
 
           addEventListener onOpen openListener true socket
           addEventListener onMessage messageListener true socket
@@ -124,30 +137,54 @@ createGame playerToken levelID = do
           pure (Left (show e))
         Right gameInstance -> pure (Right gameInstance)
 
-messageReceiver :: Event -> Effect Unit
-messageReceiver event = do
+-- placeholder
+getNextAction :: GameState -> Action
+getNextAction gameState = Move
+
+actionToJson :: Action -> String -> String
+actionToJson action gameId = case action of
+  Move -> "[\"run-command\", {\"gameId\": \"" <> gameId <> "\", \"payload\": {\"action\": \"move\"}}]"
+  Reset -> "[\"run-command\", {\"gameId\": \"" <> gameId <> "\", \"payload\": {\"action\": \"reset\"}}]"
+  Rotation n -> "[\"run-command\", {\"gameId\": \"" <> gameId <> "\", \"payload\": {\"action\": \"rotate\", \"rotation\": " <> show n <> "}}]"
+
+messageToGameState :: Event -> Effect (Maybe GameState)
+messageToGameState event = do
   log "got a message"
   let message = fromEvent event
   case message of
     Just msg -> case runExcept $ readString $ data_ msg of
-      Left e -> logShow e
+      Left e -> do
+        logShow e
+        pure Nothing
       Right str -> do
+        logShow str
         case jsonParser str of
-          Left e -> logShow e
+          Left e -> do
+            logShow e
+            pure Nothing
           Right gameState -> case toArray gameState of
-            Nothing -> log "error decoding array"
+            Nothing -> do
+              pure Nothing
             Just arr -> do
               case arr !! 1 of
-                Nothing -> log "error getting last element"
+                Nothing -> do
+                  pure Nothing
                 Just realGameState -> do
                   case gameInstanceFromJson realGameState of
-                    Left e -> logShow e
+                    Left e -> do
+                      logShow e
+                      pure Nothing
                     Right gameInstance -> case jsonParser gameInstance.gameState of
-                      Left e -> logShow e
+                      Left e -> do
+                        logShow e
+                        pure Nothing
                       Right bullshit -> case gameStateFromJson bullshit of
-                        Left e -> logShow e
-                        Right crap -> logShow crap
-    Nothing -> log "no message"
+                        Left e -> do
+                          logShow e
+                          pure Nothing
+                        Right crap -> pure (Just crap)
+    Nothing -> do
+      pure Nothing
 
 loadEnvs :: Effect (Tuple (Maybe String) (Maybe String))
 loadEnvs = do
