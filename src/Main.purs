@@ -16,7 +16,7 @@ import Data.Maybe (Maybe(..))
 import Data.Tuple (Tuple(..))
 import Dotenv as Dotenv
 import Effect (Effect)
-import Effect.Aff (Aff, runAff_)
+import Effect.Aff (Aff, Milliseconds(..), delay, runAff_)
 import Effect.Class (liftEffect)
 import Effect.Console (log, logShow)
 import Foreign (readString)
@@ -108,9 +108,11 @@ runStuff playerToken levelID = do
             case gameState of
               Nothing -> log "failed to parse game state"
               Just state -> do
-                WS.sendString connection (actionToJson (getNextAction state) realgame.entityId)
-                log $ "sent action " <> show (getNextAction state)
-            )
+                runAff_ (\either2 -> case either2 of
+                  Left err -> logShow err
+                  Right _ -> do
+                    WS.sendString connection (actionToJson (getNextAction state) realgame.entityId)
+                    log $ "sent action " <> show (getNextAction state)) (delay $ Milliseconds 1000.0))
 
           addEventListener onOpen openListener true socket
           addEventListener onMessage messageListener true socket
@@ -157,7 +159,6 @@ messageToGameState event = do
         logShow e
         pure Nothing
       Right str -> do
-        logShow str
         case jsonParser str of
           Left e -> do
             logShow e
