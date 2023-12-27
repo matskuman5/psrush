@@ -9,10 +9,13 @@ import Affjax.ResponseFormat as RF
 import Affjax.Web (defaultRequest)
 import Control.Monad.Except (runExcept)
 import Data.Argonaut (Json, JsonDecodeError, decodeJson, jsonParser, toArray)
-import Data.Array (last, length, (!!))
+import Data.Array (elem, filter, head, last, length, (!!))
 import Data.Either (Either(..))
 import Data.HTTP.Method as Method
+import Data.Int (binary, toStringAs)
 import Data.Maybe (Maybe(..))
+import Data.String.CodeUnits (toCharArray)
+import Data.String as S
 import Data.Tuple (Tuple(..))
 import Dotenv as Dotenv
 import Effect (Effect)
@@ -36,7 +39,6 @@ type GameInstance = {
   entityId :: String
 }
 
--- TODO: make rotation its own type
 type GameState = {
   player :: Player,
   moves :: Int,
@@ -59,12 +61,40 @@ type Player = {
   rotation :: Int
 }
 
-data Action = Move | Reset | Rotation Int
+data Action = Move | Reset | Rotation Direction
+
+data Direction = N | NE | E | SE | S | SW | W | NW | NullDir
+
+derive instance eqDirection :: Eq Direction
 
 instance showAction :: Show Action where
   show Move = "Move"
   show Reset = "Reset"
-  show (Rotation n) = show n
+  show (Rotation d) = show (directionToNumber d)
+
+directionToNumber :: Direction -> Int
+directionToNumber direction = case direction of
+  N -> 0
+  NE -> 45
+  E -> 90
+  SE -> 135
+  S -> 180
+  SW -> 225
+  W -> 270
+  NW -> 315
+  NullDir -> 999
+
+numberToDirection :: Int -> Direction
+numberToDirection number = case number of
+  0 -> N
+  45 -> NE
+  90 -> E
+  135 -> SE
+  180 -> S
+  225 -> SW
+  270 -> W
+  315 -> NW
+  _ -> N -- should never happen
 
 main :: Effect Unit
 main = do
@@ -111,6 +141,7 @@ runStuff playerToken levelID = do
                 runAff_ (\either2 -> case either2 of
                   Left err -> logShow err
                   Right _ -> do
+                    log $ "current walls: " <> show (toBinaryString (state.square))
                     WS.sendString connection (actionToJson (getNextAction state) realgame.entityId)
                     log $ "sent action " <> show (getNextAction state)) (delay $ Milliseconds 1000.0))
 
@@ -139,15 +170,40 @@ createGame playerToken levelID = do
           pure (Left (show e))
         Right gameInstance -> pure (Right gameInstance)
 
--- placeholder
+-- TODO: implement a smarter algorithm
+-- moves forward if possible, otherwise rotates in the first open direction it finds
 getNextAction :: GameState -> Action
-getNextAction gameState = Move
+getNextAction gameState = if playerDir `elem` openDirs
+  then Move
+  else case randomDir of
+    Nothing -> Move
+    Just dir -> Rotation dir
+    where playerDir = numberToDirection (gameState.player.rotation)
+          randomDir = head openDirs
+          openDirs = openDirections (toBinaryString (gameState.square))
+
+toBinaryString :: Int -> String
+toBinaryString n = case S.length bitString of
+  4 -> bitString
+  3 -> "0" <> bitString
+  2 -> "00" <> bitString
+  1 -> "000" <> bitString
+  _ -> "0000"
+  where bitString = toStringAs binary n
+
+openDirections :: String -> Array Direction
+openDirections bitString = filter (\d -> d /= NullDir) [nN, nE, nS, nW]
+  where nN = if bits !! 0 == Just '0' then N else NullDir
+        nE = if bits !! 1 == Just '0' then E else NullDir
+        nS = if bits !! 2 == Just '0' then S else NullDir
+        nW = if bits !! 3 == Just '0' then W else NullDir
+        bits = toCharArray bitString
 
 actionToJson :: Action -> String -> String
 actionToJson action gameId = case action of
   Move -> "[\"run-command\", {\"gameId\": \"" <> gameId <> "\", \"payload\": {\"action\": \"move\"}}]"
   Reset -> "[\"run-command\", {\"gameId\": \"" <> gameId <> "\", \"payload\": {\"action\": \"reset\"}}]"
-  Rotation n -> "[\"run-command\", {\"gameId\": \"" <> gameId <> "\", \"payload\": {\"action\": \"rotate\", \"rotation\": " <> show n <> "}}]"
+  Rotation d -> "[\"run-command\", {\"gameId\": \"" <> gameId <> "\", \"payload\": {\"action\": \"rotate\", \"rotation\": " <> show (directionToNumber d) <> "}}]"
 
 messageToGameState :: Event -> Effect (Maybe GameState)
 messageToGameState event = do
